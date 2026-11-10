@@ -629,7 +629,7 @@ dependencies = [
 [[package]]
 name = "ipma-proto"
 version = "0.1.0"
-source = "git+https://github.com/Zizico2/ipma-proto.git?rev=bc2cba7db2af35588599cb2b3aaba74894c9418a#bc2cba7db2af35588599cb2b3aaba74894c9418a"
+source = "git+https://github.com/Zizico2/ipma-proto.git?rev=3618f62d81f8203807460e6da6395735aadd8745#3618f62d81f8203807460e6da6395735aadd8745"
 dependencies = [
  "bytes",
  "prost",

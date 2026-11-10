@@ -10,7 +10,7 @@ rust-version = "1.99"
 publish = false
 
 [workspace.dependencies]
-ipma-proto = { git = "https://github.com/Zizico2/ipma-proto.git", rev = "bc2cba7db2af35588599cb2b3aaba74894c9418a" }
+ipma-proto = { git = "https://github.com/Zizico2/ipma-proto.git", rev = "3618f62d81f8203807460e6da6395735aadd8745" }
 ipma-gateway-core = { path = "crates/ipma-gateway-core" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive", "env"] }

@@ -77,7 +77,42 @@ macro_rules! fake_service {
             async fn get_weather_forecast(&self, request: Request<pb::GetWeatherForecastRequest>) -> Result<Response<pb::GetWeatherForecastResponse>,Status> {
                 let _active = self.receive(&request).await?;
                 let location_id = match request.get_ref().target { Some(pb::get_weather_forecast_request::Target::LocationId(id)) => id, _ => 0 };
-                Ok(self.response(pb::GetWeatherForecastResponse { metadata: Some(self.metadata()), forecasts: vec![pb::WeatherForecast { location_id, ..Default::default() }] }))
+                Ok(self.response(pb::GetWeatherForecastResponse { metadata: Some(self.metadata()), forecasts: vec![pb::WeatherForecast {
+                    location_id,
+                    weather_type_code: Some(1234),
+                    weather_type: Some(pb::WeatherTypeValue { value: 777, source_code: 1234 }),
+                    wind_speed_class: Some(2),
+                    wind_speed_classification: Some(pb::WindSpeedClassValue { value: pb::WindSpeedClass::Moderate as i32, source_code: 2 }),
+                    precipitation_intensity_class: Some(0),
+                    precipitation_intensity: Some(pb::PrecipitationIntensityValue { value: pb::PrecipitationIntensity::NoPrecipitation as i32, source_code: 0 }),
+                    prevailing_wind_direction: "N".into(),
+                    wind_direction: Some(pb::DirectionValue { value: pb::CompassDirection::North as i32, source: Some(pb::direction_value::Source::Text("N".into())) }),
+                    ..Default::default()
+                }] }))
+            }
+            async fn get_warnings(&self, request: Request<pb::GetWarningsRequest>) -> Result<Response<pb::GetWarningsResponse>, Status> {
+                let _active = self.receive(&request).await?;
+                Ok(self.response(pb::GetWarningsResponse { metadata: Some(self.metadata()), warnings: vec![pb::Warning {
+                    level: "purple".into(), type_name: "Future category".into(),
+                    warning_level: Some(pb::WarningLevelValue { value: pb::WarningLevel::Other as i32, source_value: "purple".into() }),
+                    warning_type: Some(pb::WarningTypeValue { value: pb::WarningType::Other as i32, source_value: "Future category".into() }),
+                    ..Default::default()
+                }] }))
+            }
+            async fn get_fire_risk(&self, request: Request<pb::GetFireRiskRequest>) -> Result<Response<pb::GetFireRiskResponse>, Status> {
+                let _active = self.receive(&request).await?;
+                Ok(self.response(pb::GetFireRiskResponse { metadata: Some(self.metadata()), risks: vec![pb::FireRisk {
+                    municipality_id: "0101".into(), risk_class: Some(5),
+                    classification: Some(pb::FireRiskClassValue { value: pb::FireRiskClass::Maximum as i32, source_code: 5 }),
+                    ..Default::default()
+                }], ..Default::default() }))
+            }
+            async fn get_code_table(&self, request: Request<pb::GetCodeTableRequest>) -> Result<Response<pb::GetCodeTableResponse>, Status> {
+                let _active = self.receive(&request).await?;
+                Ok(self.response(pb::GetCodeTableResponse { metadata: Some(self.metadata()), entries: vec![pb::CodeEntry {
+                    code: 1234, description_portuguese: "Nova classe".into(), description_english: "New class".into(),
+                    classification: Some(pb::code_entry::Classification::WeatherType(888)),
+                }] }))
             }
             $( async fn $method(&self, request: Request<pb::$req>) -> Result<Response<pb::$res>,Status> {
                 let _active = self.receive(&request).await?;
@@ -87,14 +122,11 @@ macro_rules! fake_service {
     }
 }
 fake_service! {
-    get_warnings(GetWarningsRequest) -> GetWarningsResponse;
     get_observations(GetObservationsRequest) -> GetObservationsResponse;
     get_sea_forecast(GetSeaForecastRequest) -> GetSeaForecastResponse;
-    get_fire_risk(GetFireRiskRequest) -> GetFireRiskResponse;
     get_uv_forecast(GetUvForecastRequest) -> GetUvForecastResponse;
     get_seismic_events(GetSeismicEventsRequest) -> GetSeismicEventsResponse;
     get_locations(GetLocationsRequest) -> GetLocationsResponse;
-    get_code_table(GetCodeTableRequest) -> GetCodeTableResponse;
     get_geo_dataset(GetGeoDatasetRequest) -> GetGeoDatasetResponse;
     get_climate(GetClimateRequest) -> GetClimateResponse;
 }
@@ -626,4 +658,125 @@ async fn deadline_bearing_public_misses_can_populate_the_cache() {
     }
     assert_eq!(h.state.calls.load(Ordering::SeqCst), 1);
     assert!(h.state.seen.lock().unwrap()[0].contains_key("grpc-timeout"));
+}
+
+#[tokio::test]
+async fn categorical_values_and_future_enum_numbers_survive_forwarding_and_cache() {
+    let mut h = harness(State::default(), GatewayOptions::default()).await;
+    let weather = pb::GetWeatherForecastRequest {
+        target: Some(pb::get_weather_forecast_request::Target::LocationId(
+            1110600,
+        )),
+    };
+    let first = h
+        .client
+        .get_weather_forecast(weather)
+        .await
+        .unwrap()
+        .into_inner();
+    let second = h
+        .client
+        .get_weather_forecast(weather)
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(first, second);
+    let forecast = &second.forecasts[0];
+    assert_eq!(forecast.weather_type.as_ref().unwrap().value, 777);
+    assert_eq!(forecast.weather_type.as_ref().unwrap().source_code, 1234);
+    assert_eq!(
+        forecast.wind_speed_classification.as_ref().unwrap().value(),
+        pb::WindSpeedClass::Moderate
+    );
+    assert_eq!(
+        forecast.precipitation_intensity.as_ref().unwrap().value(),
+        pb::PrecipitationIntensity::NoPrecipitation
+    );
+    assert_eq!(
+        forecast
+            .precipitation_intensity
+            .as_ref()
+            .unwrap()
+            .source_code,
+        0
+    );
+    assert_eq!(
+        forecast.wind_direction.as_ref().unwrap().source,
+        Some(pb::direction_value::Source::Text("N".into()))
+    );
+    let first = h
+        .client
+        .get_warnings(pb::GetWarningsRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    let second = h
+        .client
+        .get_warnings(pb::GetWarningsRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(first, second);
+    assert_eq!(
+        second.warnings[0].warning_level.as_ref().unwrap().value(),
+        pb::WarningLevel::Other
+    );
+    assert_eq!(
+        second.warnings[0]
+            .warning_level
+            .as_ref()
+            .unwrap()
+            .source_value,
+        "purple"
+    );
+    assert_eq!(
+        second.warnings[0]
+            .warning_type
+            .as_ref()
+            .unwrap()
+            .source_value,
+        "Future category"
+    );
+    let first = h
+        .client
+        .get_fire_risk(pb::GetFireRiskRequest {
+            day_offset: Some(0),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let second = h
+        .client
+        .get_fire_risk(pb::GetFireRiskRequest {
+            day_offset: Some(0),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(first, second);
+    assert_eq!(
+        second.risks[0].classification.as_ref().unwrap().value(),
+        pb::FireRiskClass::Maximum
+    );
+    assert_eq!(second.risks[0].municipality_id, "0101");
+    let first = h
+        .client
+        .get_code_table(pb::GetCodeTableRequest { kind: 1 })
+        .await
+        .unwrap()
+        .into_inner();
+    let second = h
+        .client
+        .get_code_table(pb::GetCodeTableRequest { kind: 1 })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(first, second);
+    assert_eq!(
+        second.entries[0].classification,
+        Some(pb::code_entry::Classification::WeatherType(888))
+    );
+    assert_eq!(second.entries[0].description_portuguese, "Nova classe");
+    assert_eq!(second.entries[0].code, 1234);
+    assert_eq!(h.state.calls.load(Ordering::SeqCst), 4);
 }

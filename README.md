@@ -18,6 +18,9 @@ Use the adapter directly for one-to-one upstream requests.
 `crates/ipma-gateway` owns CLI/env configuration, runtime, health, reflection
 and graceful shutdown. The gateway does not import the adapter implementation
 or perform HTTP/GeoJSON/CSV conversion. It shares only the versioned API crate.
+Category mappings belong to the adapter. The gateway forwards and caches the
+shared enum wrappers, original source values and reference-table descriptions
+without remapping, including unknown numeric protobuf enum values.
 
 Start the adapter first, then run `just run` here. The default gateway listens
 on `127.0.0.1:50052` and connects to `http://127.0.0.1:50051`.
