@@ -1,0 +1,25 @@
+[package]
+name = "ipma-gateway-core"
+description = "Caching and gRPC delegation over the shared IPMA API"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+ipma-proto.workspace = true
+anyhow.workspace = true
+http.workspace = true
+moka.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
+tokio-stream.workspace = true
+
+[lints]
+workspace = true

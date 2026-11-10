@@ -1,0 +1,36 @@
+[workspace]
+members = ["crates/*"]
+default-members = ["crates/ipma-gateway"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[workspace.dependencies]
+ipma-proto = { git = "https://github.com/Zizico2/ipma-proto.git", rev = "2be562e77f1859baee5e412cb0122772ecf957a8" }
+ipma-gateway-core = { path = "crates/ipma-gateway-core" }
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+dotenvy = "0.15.7"
+http = "1.5.0"
+moka = { version = "0.12.16", features = ["future"] }
+prost = "0.14.4"
+prost-types = "0.14.4"
+tokio = { version = "1.54.1", features = ["rt", "sync", "time"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic = { version = "0.14.9", features = ["gzip", "tls-native-roots", "tls-ring"] }
+tonic-health = "0.14.9"
+tonic-reflection = "0.14.9"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

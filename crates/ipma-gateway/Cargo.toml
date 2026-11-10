@@ -1,0 +1,26 @@
+[package]
+name = "ipma-gateway"
+description = "IPMA policy gateway with caching"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+ipma-proto.workspace = true
+ipma-gateway-core.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+dotenvy.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tonic.workspace = true
+tonic-health.workspace = true
+tonic-reflection.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+prost.workspace = true
+
+[lints]
+workspace = true
