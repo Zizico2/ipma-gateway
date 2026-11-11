@@ -30,6 +30,9 @@ pub struct GatewayOptions {
     pub cache_capacity_bytes: u64,
     pub cache_ttl_cap: Option<Duration>,
     pub max_concurrent_forwards: usize,
+    /// Trusted ingress/tracing metadata that does not vary public response data.
+    /// Only affects cache eligibility; metadata is still forwarded unchanged.
+    pub cache_neutral_metadata: Vec<String>,
 }
 impl Default for GatewayOptions {
     fn default() -> Self {
@@ -39,6 +42,7 @@ impl Default for GatewayOptions {
             cache_capacity_bytes: 64 * 1024 * 1024,
             cache_ttl_cap: None,
             max_concurrent_forwards: 8,
+            cache_neutral_metadata: Vec::new(),
         }
     }
 }
@@ -115,6 +119,26 @@ impl Gateway {
             !options.cache_ttl_cap.is_some_and(|ttl| ttl.is_zero()),
             "cache TTL cap must be positive"
         );
+        for name in &options.cache_neutral_metadata {
+            anyhow::ensure!(
+                !name.is_empty()
+                    && name
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                    && !name.ends_with("-bin")
+                    && !matches!(
+                        name.as_str(),
+                        "authorization"
+                            | "proxy-authorization"
+                            | "cookie"
+                            | "x-api-key"
+                            | "x-tenant"
+                            | "x-tenant-id"
+                            | "tenant-id"
+                    ),
+                "cache-neutral metadata must be lowercase ASCII names and cannot include credentials, tenant IDs or binary metadata"
+            );
+        }
         let uri: http::Uri = options.upstream_address.parse()?;
         anyhow::ensure!(
             matches!(uri.scheme_str(), Some("http" | "https"))
@@ -200,7 +224,7 @@ impl Gateway {
             return Err(Status::deadline_exceeded("request deadline elapsed"));
         }
         // Caller context is isolated from public cache entries.
-        if bypass_cache(request.metadata()) {
+        if bypass_cache(request.metadata(), &self.options.cache_neutral_metadata) {
             return self.forward(request, budget, call).await;
         }
         let explicit_deadline = request.metadata().contains_key("grpc-timeout");
@@ -328,10 +352,12 @@ fn strip_transport_metadata(metadata: &mut MetadataMap) {
         metadata.remove(*name);
     }
 }
-fn bypass_cache(metadata: &MetadataMap) -> bool {
+fn bypass_cache(metadata: &MetadataMap, neutral: &[String]) -> bool {
     metadata.iter().any(|entry| match entry {
         KeyAndValueRef::Ascii(key, _) => {
-            !TRANSPORT_METADATA.contains(&key.as_str()) && key.as_str() != "grpc-timeout"
+            !TRANSPORT_METADATA.contains(&key.as_str())
+                && key.as_str() != "grpc-timeout"
+                && !neutral.iter().any(|name| name == key.as_str())
         }
         KeyAndValueRef::Binary(_, _) => true,
     })

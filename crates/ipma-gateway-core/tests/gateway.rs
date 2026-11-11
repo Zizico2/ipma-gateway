@@ -872,3 +872,94 @@ async fn reference_composition_and_geobuf_companions_survive_cache_hits() {
     assert_eq!(species.sanitary_class.as_ref().unwrap().source_value, "B*");
     assert_eq!(h.state.calls.load(Ordering::SeqCst), 2);
 }
+
+#[tokio::test]
+async fn trusted_ingress_metadata_can_share_public_cache_without_being_dropped() {
+    let mut h = harness(
+        State::default(),
+        GatewayOptions {
+            cache_neutral_metadata: vec!["x-forwarded-for".into(), "x-trace-id".into()],
+            ..Default::default()
+        },
+    )
+    .await;
+    for value in ["192.0.2.1", "192.0.2.2"] {
+        let mut request = Request::new(pb::GetWarningsRequest {});
+        request
+            .metadata_mut()
+            .insert("x-forwarded-for", value.parse().unwrap());
+        request
+            .metadata_mut()
+            .insert("x-trace-id", value.parse().unwrap());
+        assert!(
+            h.client
+                .get_warnings(request)
+                .await
+                .unwrap()
+                .into_inner()
+                .metadata
+                .unwrap()
+                .expires_at
+                .is_some()
+        );
+    }
+    assert_eq!(h.state.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        h.state.seen.lock().unwrap()[0]
+            .get("x-forwarded-for")
+            .unwrap(),
+        "192.0.2.1"
+    );
+    for _ in 0..2 {
+        let mut request = Request::new(pb::GetWarningsRequest {});
+        request
+            .metadata_mut()
+            .insert("authorization", "Bearer synthetic".parse().unwrap());
+        request
+            .metadata_mut()
+            .insert("x-forwarded-for", "192.0.2.1".parse().unwrap());
+        assert!(
+            h.client
+                .get_warnings(request)
+                .await
+                .unwrap()
+                .into_inner()
+                .metadata
+                .unwrap()
+                .expires_at
+                .is_none()
+        );
+    }
+    assert_eq!(h.state.calls.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn cache_neutral_configuration_rejects_credentials_tenant_and_binary_context() {
+    for name in [
+        "authorization",
+        "proxy-authorization",
+        "cookie",
+        "x-api-key",
+        "x-tenant",
+        "x-tenant-id",
+        "tenant-id",
+        "x-context-bin",
+        "Uppercase",
+        "",
+        "bad name",
+    ] {
+        let options = GatewayOptions {
+            cache_neutral_metadata: vec![name.into()],
+            ..Default::default()
+        };
+        let result = Gateway::connect(options).await;
+        assert!(result.is_err(), "accepted {name}");
+        assert!(
+            result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("cache-neutral metadata")
+        );
+    }
+}

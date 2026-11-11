@@ -38,6 +38,13 @@ struct Config {
     /// Optional upper bound on dataset cache lifetimes, in seconds.
     #[arg(long, env = "IPMA_GATEWAY_CACHE_TTL_CAP_SECONDS", value_parser = clap::value_parser!(u64).range(1..=86400))]
     cache_ttl_cap_seconds: Option<u64>,
+    /// Comma-separated trusted ingress/tracing headers that do not vary public data.
+    #[arg(
+        long,
+        env = "IPMA_GATEWAY_CACHE_NEUTRAL_METADATA",
+        value_delimiter = ','
+    )]
+    cache_neutral_metadata: Vec<String>,
     /// Tracing filter directives.
     #[arg(
         long,
@@ -89,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
         upstream_timeout: Duration::from_secs(config.upstream_timeout_seconds),
         cache_capacity_bytes: config.cache_mib * 1024 * 1024,
         max_concurrent_forwards: config.max_concurrent_forwards as usize,
+        cache_neutral_metadata: config.cache_neutral_metadata,
         cache_ttl_cap: config.cache_ttl_cap_seconds.map(Duration::from_secs),
     })
     .await?;

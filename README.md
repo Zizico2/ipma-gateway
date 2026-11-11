@@ -37,6 +37,7 @@ environment variables override it, and CLI arguments take precedence.
 | `IPMA_GATEWAY_CACHE_MIB` | `64` |
 | `IPMA_GATEWAY_MAX_CONCURRENT_FORWARDS` | `8` |
 | `IPMA_GATEWAY_CACHE_TTL_CAP_SECONDS` | Unset |
+| `IPMA_GATEWAY_CACHE_NEUTRAL_METADATA` | Empty |
 | `RUST_LOG` | `ipma_gateway=info,ipma_gateway_core=info` |
 
 The upstream must be an HTTP(S) origin without credentials/path/query. HTTPS
@@ -71,7 +72,13 @@ with explicit deadlines can reuse cache hits; their misses forward separately
 with their individual budgets and may populate the cache. They are never
 coalesced under another caller's shorter deadline. Public misses without an
 explicit deadline are coalesced under the configured upstream timeout.
-Standard transport headers do not vary cache keys. `Ping` always delegates.
+Standard transport headers do not vary cache keys. Deployments behind a trusted
+proxy can explicitly mark comma-separated ingress/tracing metadata names as
+cache-neutral with `IPMA_GATEWAY_CACHE_NEUTRAL_METADATA`. Those headers remain
+forwarded but do not cause a bypass. Leave the list empty unless the named
+headers cannot affect response data. Credentials, common tenant-ID headers and
+binary metadata cannot be declared neutral; all other application metadata
+continues to bypass the cache. `Ping` always delegates.
 
 Request metadata is forwarded after transport headers are rebuilt. Custom
 response metadata and upstream status code/message/details/error metadata are
