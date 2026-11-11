@@ -107,6 +107,40 @@ macro_rules! fake_service {
                     ..Default::default()
                 }], ..Default::default() }))
             }
+            async fn get_locations(&self, request: Request<pb::GetLocationsRequest>) -> Result<Response<pb::GetLocationsResponse>, Status> {
+                let _active = self.receive(&request).await?;
+                Ok(self.response(pb::GetLocationsResponse {
+                    metadata: Some(self.metadata()),
+                    locations: vec![pb::Location {
+                        location_id: 9999999,
+                        location: Some(pb::ForecastLocationValue { value: 777, source_code: 9999999 }),
+                        municipality: Some(pb::MunicipalityValue {
+                            value: pb::Municipality::Other as i32, source_code: "9901".into(),
+                            source_local_code: Some(1), district: Some(pb::DistrictValue { value: 888, source_code: 99 }),
+                        }),
+                        ..Default::default()
+                    }],
+                }))
+            }
+            async fn get_geo_dataset(&self, request: Request<pb::GetGeoDatasetRequest>) -> Result<Response<pb::GetGeoDatasetResponse>, Status> {
+                let _active = self.receive(&request).await?;
+                Ok(self.response(pb::GetGeoDatasetResponse {
+                    metadata: Some(self.metadata()), geobuf: vec![0, 127, 255].into(),
+                    feature_categories: vec![pb::GeoFeatureCategories {
+                        feature_index: 7,
+                        categories: Some(pb::geo_feature_categories::Categories::BivalveZone(pb::BivalveZoneCategories {
+                            zone: Some(pb::BivalveZoneValue { value: 999, source_value: "FUTURE".into() }),
+                            status: Some(pb::BivalveZoneStatusValue { value: pb::BivalveZoneStatus::Close as i32, source_value: "CLOSE".into() }),
+                            species_permissions: vec![pb::BivalveSpeciesPermission {
+                                species: Some(pb::BivalveSpeciesValue { value: 777, source_value: "Future taxon".into(), common_name: "Future label".into() }),
+                                sanitary_class: Some(pb::BivalveSanitaryClassValue { value: pb::BivalveSanitaryClass::BStar as i32, source_value: "B*".into() }),
+                                permission: Some(pb::BivalveHarvestPermissionValue { value: 888, source_value: "pending".into() }),
+                            }],
+                            ..Default::default()
+                        })),
+                    }],
+                }))
+            }
             async fn get_code_table(&self, request: Request<pb::GetCodeTableRequest>) -> Result<Response<pb::GetCodeTableResponse>, Status> {
                 let _active = self.receive(&request).await?;
                 Ok(self.response(pb::GetCodeTableResponse { metadata: Some(self.metadata()), entries: vec![pb::CodeEntry {
@@ -126,8 +160,6 @@ fake_service! {
     get_sea_forecast(GetSeaForecastRequest) -> GetSeaForecastResponse;
     get_uv_forecast(GetUvForecastRequest) -> GetUvForecastResponse;
     get_seismic_events(GetSeismicEventsRequest) -> GetSeismicEventsResponse;
-    get_locations(GetLocationsRequest) -> GetLocationsResponse;
-    get_geo_dataset(GetGeoDatasetRequest) -> GetGeoDatasetResponse;
     get_climate(GetClimateRequest) -> GetClimateResponse;
 }
 struct Harness {
@@ -779,4 +811,64 @@ async fn categorical_values_and_future_enum_numbers_survive_forwarding_and_cache
     assert_eq!(second.entries[0].description_portuguese, "Nova classe");
     assert_eq!(second.entries[0].code, 1234);
     assert_eq!(h.state.calls.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn reference_composition_and_geobuf_companions_survive_cache_hits() {
+    let mut h = harness(State::default(), GatewayOptions::default()).await;
+    let first = h
+        .client
+        .get_locations(pb::GetLocationsRequest { kind: 1 })
+        .await
+        .unwrap()
+        .into_inner();
+    let cached = h
+        .client
+        .get_locations(pb::GetLocationsRequest { kind: 1 })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(first, cached);
+    let location = &cached.locations[0];
+    assert_eq!(location.location.as_ref().unwrap().value, 777);
+    let municipality = location.municipality.as_ref().unwrap();
+    assert_eq!(municipality.source_code, "9901");
+    assert_eq!(municipality.source_local_code, Some(1));
+    assert_eq!(municipality.district.as_ref().unwrap().value, 888);
+    let first = h
+        .client
+        .get_geo_dataset(pb::GetGeoDatasetRequest { dataset: 3 })
+        .await
+        .unwrap()
+        .into_inner();
+    let cached = h
+        .client
+        .get_geo_dataset(pb::GetGeoDatasetRequest { dataset: 3 })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(first, cached);
+    assert_eq!(cached.geobuf.as_ref(), &[0, 127, 255]);
+    assert_eq!(cached.feature_categories[0].feature_index, 7);
+    let Some(pb::geo_feature_categories::Categories::BivalveZone(zone)) =
+        &cached.feature_categories[0].categories
+    else {
+        panic!("lost feature categories");
+    };
+    assert_eq!(zone.zone.as_ref().unwrap().value, 999);
+    assert_eq!(zone.zone.as_ref().unwrap().source_value, "FUTURE");
+    assert_eq!(
+        zone.status.as_ref().unwrap().value(),
+        pb::BivalveZoneStatus::Close
+    );
+    let species = &zone.species_permissions[0];
+    assert_eq!(species.species.as_ref().unwrap().value, 777);
+    assert_eq!(
+        species.species.as_ref().unwrap().common_name,
+        "Future label"
+    );
+    assert_eq!(species.permission.as_ref().unwrap().value, 888);
+    assert_eq!(species.permission.as_ref().unwrap().source_value, "pending");
+    assert_eq!(species.sanitary_class.as_ref().unwrap().source_value, "B*");
+    assert_eq!(h.state.calls.load(Ordering::SeqCst), 2);
 }
